@@ -1,0 +1,120 @@
+---
+title: "An Investigation On Gold Price and Inflation"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Gold Price and Inflation
+
+Today, I come across an article about the relationship between gold price and inflation. There is an arguement in the article stating that "inflation is a bad thing for gold".
+The logic goes like "if the inflation is high, then securities like bonds will be required a higher yield. Since gold has no yield, investors will sell gold and buy bonds for higher yield. Therefore, gold price goes down.”
+
+Still, I feel somewhat unconvinced by this logic. 
+
+Well, why not let data speak itself. 
+
+First, i got the gold price data and inflation data from Quandl API
+
+```{r }
+library(Quandl)#financial data
+library(data.table)#read table
+library(lubridate)#date manupulation
+library(scales)
+library(ggthemes)#change plot themes
+library(dplyr)#dataframe
+library(ggplot2)
+gold <- Quandl("LBMA/GOLD")#gold data
+api <- "https://www.quandl.com/api/v3/datasets/FRED/DTB3.csv?api_key=prFMytag1uYoMRJLGyNa"
+inflation = fread(api)#inflation data
+# get year, month , day off the Date
+gold$Date <- as.Date(gold$Date, "%y/%m/%d")
+gold$year <- year(ymd(gold$Date))
+gold$month <-  month(ymd(gold$Date))
+gold$day <- day(ymd(gold$Date))
+inflation$year <- year(ymd(inflation$Date))
+inflation$month <-  month(ymd(inflation$Date))
+inflation$day <- day(ymd(inflation$Date))
+
+```
+
+with data in hand, let's first plot some simple chart
+
+first, I ploted the Inflation over time, as you may have noticed, inflation peaked  during 1980s, complex period
+```{r}
+P1 <- ggplot(inflation, aes(x = factor(year),y = Value))+
+  geom_boxplot()+
+  scale_x_discrete(name = 'Year',breaks=seq(1950, 2020, 10))
+  
+P1 + theme_economist() + scale_colour_economist() +
+  scale_y_continuous(name= "Inflation Rate", position = "left")+
+  ggtitle("Inflation Over Time")
+```
+
+then, i'll plot the Gold Price Over Time
+```{r}
+gold$USD <- gold[2] 
+
+P2 <- ggplot(gold, aes(x = factor(year),y = USD ))+
+  geom_boxplot()+
+  scale_x_discrete(name = 'Year',breaks=seq(1950, 2020, 10))
+P2 + theme_economist() + scale_colour_economist() +
+  scale_y_continuous(name= "Gold Price", position = "left")+
+  ggtitle("Gold Price Over Time")
+```
+
+next, let's figure out the relationship between gold price and inflation. As you can see ,they have a quite strong negtive relationship , aren't they? 
+However, the inflation is relative figure, we may have to turn gold price the same way as inflation. 
+
+```{r }
+
+inf_y <- select(inflation,year,Value)# yearly data for inflation
+ys <- summarise(group_by(tbl_df(inf_y),year),mean(Value))#yearly data for inflation
+
+gold$USD <- gold$`USD (AM)`
+
+gs <- select(gold,year,USD)# yearly data for gold
+
+gsd <- summarise(group_by(tbl_df(gs),year),mean(USD))# yearly data for gold
+
+com = merge(x= ys,y = gsd,by="year",all= TRUE)#yearly data for gold and inflation
+com$inflation <- com$`mean(Value)`#change name
+com$USD <- com$`mean(USD)`#change name
+
+com <- select(com, year, USD, inflation)#drop value
+com <- na.omit(com)#get rid of na
+com$USD <- (com$USD-mean(com$USD))/sd(com$USD)#norm and std
+com$inflation <- (com$inflation-mean(com$inflation))/sd(com$inflation)#norm and std
+cor(com$USD,com$inflation)#correlation
+
+
+
+```
+
+next, let's see their relationship again 
+
+```{r}
+lg <- filter(com, year>1968)#from 2ed row
+sm <- filter(com, year < 2017)#to -1 row
+ts <- filter(com,year>1968)#third data
+
+ts$rtg <- lg$USD/sm$USD#relative gold price
+ts$inflation <- lg$inflation#inflation
+tss <- ts[c('year','rtg','inflation')]#year ,relative gold price , inflation
+cor(tss$rtg,tss$inflation)
+```
+
+
+last, let's draw the picture to visualize it. 
+
+```{r}
+tsss <- melt(tss,id='year')#prepare for drawing
+P3 <- ggplot(tsss,aes(x = year,y = value,colour=variable,group=variable,alpha=0.8,size=2))+
+  geom_line()+#usd line
+  scale_x_continuous(name = 'Year',breaks=seq(1950, 2020, 10))
+P3 + theme_economist() + scale_colour_economist() +
+  scale_y_continuous(name= "standard and Normaized price", position = "left")+
+  ggtitle("Gold Price with Infation")
+```
